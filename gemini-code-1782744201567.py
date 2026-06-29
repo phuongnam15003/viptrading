@@ -1,0 +1,41 @@
+import ccxt
+import pandas as pd
+
+# 1. Khởi tạo kết nối với sàn Binance (Dùng API public, không cần key)
+exchange = ccxt.binance({
+    'enableRateLimit': True,
+})
+
+def fetch_data(symbol, timeframe, limit=100):
+    """Hàm lấy dữ liệu OHLCV từ Binance"""
+    print(f"Đang tải dữ liệu {symbol} khung {timeframe}...")
+    bars = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+    df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    return df
+
+def detect_fvg(df):
+    """Hàm thuật toán quét tìm Fair Value Gap (FVG)"""
+    # Điều kiện FVG Tăng (Bullish): Đáy nến thứ 3 cao hơn đỉnh nến thứ 1
+    df['bullish_fvg'] = (df['low'] > df['high'].shift(2)) & (df['close'].shift(1) > df['open'].shift(1))
+    
+    # Điều kiện FVG Giảm (Bearish): Đỉnh nến thứ 3 thấp hơn đáy nến thứ 1
+    df['bearish_fvg'] = (df['high'] < df['low'].shift(2)) & (df['close'].shift(1) < df['open'].shift(1))
+    
+    # Lọc ra các nến để lại FVG
+    fvg_zones = df[df['bullish_fvg'] | df['bearish_fvg']].copy()
+    return fvg_zones
+
+# --- CHẠY THỬ NGHIỆM LÕI ---
+if __name__ == "__main__":
+    # Test với khung H4 như mày yêu cầu
+    symbol = 'BTC/USDT'
+    timeframe = '4h'
+    
+    data = fetch_data(symbol, timeframe, limit=200)
+    fvg_results = detect_fvg(data)
+    
+    print("\n[+] ĐÃ TÌM THẤY CÁC VÙNG FVG GẦN NHẤT:")
+    for index, row in fvg_results.tail(5).iterrows():
+        fvg_type = "BULLISH FVG (Canh Long)" if row['bullish_fvg'] else "BEARISH FVG (Canh Short)"
+        print(f" - Thời gian: {row['timestamp']} | Loại: {fvg_type}")
